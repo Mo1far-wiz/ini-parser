@@ -1,7 +1,11 @@
 [package]
 name = "ini-parser"
 version = "0.1.0"
+authors = ["Oleksandr Prokhorov <oleksandr.prokhorov@ukma.edu.ua>"]
 edition = "2021"
+description = "This tool was developed as a part of the Rust course at National University of \"Kyiv-Mohyla Academy\"."
+license = "MIT"
+
 
 [dependencies]
 pest = "2.1"

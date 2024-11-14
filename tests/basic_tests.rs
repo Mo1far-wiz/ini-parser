@@ -1,7 +1,7 @@
 #[cfg(test)]
 mod tests {
     use ini_parser::parser::{IniParser, Rule};
-    use pest::{error::Error as PestError, Parser};
+    use pest::Parser;
 
     #[test]
     fn test_parse_section_name() {
