@@ -2,6 +2,11 @@
 
 This project is a Rust-based utility for parsing `.ini` files, which are commonly used to store configuration settings in a simple key-value pair format. By parsing these files, this tool allows automated processing and extraction of configuration data, useful in various applications, including configuration management and system setup.
 
+## Links
+
+- **Crates.io**: [ini-parser on crates.io](https://crates.io/crates/ini-parser)
+- **Documentation**: [ini-parser Documentation](https://docs.rs/ini-parser/latest/ini_parser/index.html)
+
 ### Example of an `.ini` File
 
 Here’s an example `.ini` file that can be parsed by this tool:
