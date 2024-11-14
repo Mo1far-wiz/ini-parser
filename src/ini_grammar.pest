@@ -1,0 +1,41 @@
+/// The root rule for parsing an entire INI file. An INI file consists of multiple sections,
+/// each containing key-value pairs.
+/// The sections are separated by optional newlines for flexibility in formatting.
+ini_file = { SOI ~ (section ~ NEWLINE*)* ~ EOI }
+
+/// Represents a section in the INI file. A section begins with a `[` followed by a section name,
+/// and ends with a `]`. Between the section header and the section's key-value pairs, there may
+/// be optional newlines. The section can contain multiple key-value pairs.
+section = {
+    "[" ~ section_name ~ "]" ~
+    NEWLINE* ~
+    key_value* ~
+    NEWLINE*
+}
+
+/// The section name is the identifier for the section, enclosed by square brackets. It can be any
+/// sequence of characters except `]`, which marks the end of the section. The section name typically
+/// describes the content of the section, such as `[Database]` or `[Logging]`.
+section_name = { (!"]" ~ ANY)+ }
+
+/// Represents a key-value pair within a section. Each key-value pair consists of a key, an equal sign
+/// (`=`), and a value, followed by an optional newline. Key-value pairs provide the actual data for each
+/// section in the INI file, such as `host=localhost` or `version=1.0`.
+key_value = {
+    key ~ "=" ~ value ~
+    NEWLINE?
+}
+
+/// The key in a key-value pair. It can consist of any sequence of characters, except for newlines or the 
+/// equal sign (`=`), which is used to separate the key and value. Keys are typically descriptive identifiers.
+key = { (!(NEWLINE | "=") ~ ANY)+ }
+
+/// The value in a key-value pair. It is a sequence of characters that may include spaces and any other
+/// characters except newlines. The value is the data associated with the key, such as the database host or
+/// application version.
+value = { (!NEWLINE ~ ANY)+ }
+
+/// Defines the `NEWLINE` rule, which represents the newline character (`\n`). Newlines separate sections,
+/// key-value pairs, and may appear between any other elements for improved readability and flexibility in
+/// the INI file format.
+NEWLINE = { "\n" }
