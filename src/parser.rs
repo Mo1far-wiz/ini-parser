@@ -7,56 +7,153 @@ use thiserror::Error;
 
 use crate::ini_file::{IniFile, Section};
 
+/// The parser for the INI file format using Pest.
+///
+/// This parser is responsible for parsing the entire INI file, including sections,
+/// key-value pairs, and nested sections. It uses Pest's PEG grammar to process the
 #[derive(Parser)]
-#[grammar = "ini_grammar.pest"] // Replace with the actual path to your .pest file
+#[grammar = "ini_grammar.pest"]
 pub struct IniParser;
 
 #[derive(Debug, Error)]
 pub enum ParseError {
     #[error("Parsing error: {0}")]
     PestError(#[from] Box<PestError<Rule>>),
-}
 
-impl Section {
-    fn parse(pair: Pair<Rule>) -> Result<Self, ParseError> {
-        let mut inner = pair.into_inner();
-        let name = inner.next().unwrap().as_str().to_string();
-        let mut key_values = HashMap::new();
+    #[error("Key-value pair found outside of any section")]
+    KeyValueOutsideSection,
 
-        for item in inner {
-            if item.as_rule() == Rule::key_value {
-                let mut kv = item.into_inner();
-                let key = kv.next().unwrap().as_str().to_string();
-                let value = kv.next().unwrap().as_str().to_string();
-                key_values.insert(key, value);
-            }
-        }
-
-        Ok(Section { name, key_values })
-    }
+    #[error("Unexpected rule: {0:?}")]
+    UnexpectedRule(Rule),
 }
 
 impl IniFile {
-    pub fn parse(pair: Pair<Rule>) -> Result<Self, ParseError> {
-        let mut sections = HashMap::new();
+    /// Parses a string representation of an INI file and returns an `IniFile` struct.
+    ///
+    /// # Arguments
+    ///
+    /// * `input` - A string slice that holds the contents of an INI file.
+    ///
+    /// # Returns
+    ///
+    /// Returns a `Result` that contains the `IniFile` on success or a `ParseError` on failure.
+    pub fn from_str(input: &str) -> Result<Self, ParseError> {
+        let pairs = IniParser::parse(Rule::ini_file, input.trim_start())
+            .map_err(|e| ParseError::PestError(Box::new(e)))?;
 
-        for section_pair in pair
-            .into_inner()
-            .filter(|item| item.as_rule() == Rule::section)
-        {
-            let section = Section::parse(section_pair)?;
+        let mut sections = HashMap::new();
+        let mut current_section: Option<Section> = None;
+
+        for pair in pairs {
+            match pair.as_rule() {
+                Rule::ini_file => {
+                    for inner_pair in pair.into_inner() {
+                        match inner_pair.as_rule() {
+                            Rule::section => {
+                                if let Some(section) = current_section.take() {
+                                    sections.insert(section.name.clone(), section);
+                                }
+
+                                current_section = Some(Section::parse(inner_pair)?);
+                            }
+                            Rule::nested_section => {
+                                if let Some(parent_section) = current_section.as_mut() {
+                                    let nested_section = Section::parse(inner_pair)?;
+                                    parent_section
+                                    .nested_sections
+                                    .insert(nested_section.name.clone(), nested_section);
+
+                                } else {
+                                    return Err(ParseError::KeyValueOutsideSection);
+                                }
+                            }
+                            Rule::key_value => {
+                                if let Some(section) = current_section.as_mut() {
+                                    let (key, value) = parse_key_value(inner_pair)?;
+                                    section.key_values.insert(key, value);
+                                } else {
+                                    return Err(ParseError::KeyValueOutsideSection);
+                                }
+                            }
+                            Rule::comment | Rule::NEWLINE => {
+                                // Ignore comments and newlines
+                            }
+                            Rule::EOI => {
+                                // End of input, ignore it
+                            }
+                            _ => return Err(ParseError::UnexpectedRule(inner_pair.as_rule())),
+                        }
+                    }
+                }
+                _ => return Err(ParseError::UnexpectedRule(pair.as_rule())),
+            }
+        }
+        if let Some(section) = current_section {
             sections.insert(section.name.clone(), section);
         }
-
         Ok(IniFile { sections })
     }
 }
 
-pub fn parse(input: &str) -> Result<IniFile, ParseError> {
-    let file = IniParser::parse(Rule::ini_file, input.trim_start())
-        .expect("unable to parse")
-        .next()
-        .unwrap();
+impl Section {
+    /// Parses a section from a given pair.
+    ///
+    /// # Arguments
+    ///
+    /// * `pair` - The pair to parse, typically representing a section from the INI input.
+    ///
+    /// # Returns
+    ///
+    /// Returns a `Result` with a `Section` on success, or a `ParseError` on failure.
+    fn parse(pair: Pair<Rule>) -> Result<Self, ParseError> {
+        let mut inner = pair.into_inner();
+        let name = inner
+            .next()
+            .ok_or_else(|| ParseError::UnexpectedRule(Rule::section_name))?
+            .as_str()
+            .to_string();
 
-    IniFile::parse(file)
+        let mut key_values = HashMap::new();
+        let mut nested_sections = HashMap::new();
+
+        for inner_pair in inner {
+            match inner_pair.as_rule() {
+                Rule::key_value => {
+                    let (key, value) = parse_key_value(inner_pair)?;
+                    key_values.insert(key, value);
+                }
+                Rule::nested_section => {
+                    let nested_section = Section::parse(inner_pair)?;
+                    nested_sections.insert(nested_section.name.clone(), nested_section);
+                }
+                _ => {}
+            }
+        }
+
+        Ok(Section {
+            name,
+            key_values,
+            nested_sections,
+        })
+    }
+}
+
+
+/// Parse a key-value pair into a tuple of key and value.
+fn parse_key_value(pair: Pair<Rule>) -> Result<(String, String), ParseError> {
+    let mut inner = pair.into_inner();
+    let key = inner
+        .next()
+        .ok_or_else(|| ParseError::UnexpectedRule(Rule::key))?
+        .as_str()
+        .to_string();
+    let value = inner.next().map_or_else(
+        || "".to_string(), // Handle cases with no value
+        |v| v.as_str().to_string(),
+    );
+    Ok((key, value))
+}
+
+pub fn parse(input: &str) -> Result<IniFile, ParseError> {
+    IniFile::from_str(input)
 }

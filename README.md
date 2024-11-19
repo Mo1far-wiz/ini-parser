@@ -12,13 +12,37 @@ This project is a Rust-based utility for parsing `.ini` files, which are commonl
 Here’s an example `.ini` file that can be parsed by this tool:
 
 ```ini
+# A top-level comment
+[General]
+app_name = MyApplication
+version = 1.2.3
+description = "An example INI file for testing"
+
 [Database]
-host=localhost
-port=5432
+host = localhost
+port = 5432
+username = admin
+password = "p@ssw0rd"
+
+[[Database.Connection]]
+user = admin
+password = secret
+
+[[Database.Settings]]
+timeout = 30
+pool_size = 10
+
+[Logging]
+level=debug
+file_path=/var/log/app.log
 
 [Server]
-address=127.0.0.1
+host=0.0.0.0
 port=8080
+
+[Features]
+enable_feature_x=true
+enable_feature_y=false
 ```
 
 ## Technical Description
@@ -35,77 +59,118 @@ The `.ini` files are parsed line-by-line, following a grammar that identifies se
 ### Grammar
 
 ```pest
-ini_file = { SOI ~ (section ~ NEWLINE*)* ~ EOI }
+ini_file = { SOI ~ (comment | section | NEWLINE)* ~ EOI }
+
+WHITESPACE = _{ " " | "\t" }
+NEWLINE = { "\n" }
 
 section = {
     "[" ~ section_name ~ "]" ~
     NEWLINE* ~
-    key_value* ~
-    NEWLINE*
+    (comment | key_value | nested_section | NEWLINE)*
 }
-
-section_name = { (!"]" ~ ANY)+ }
+nested_section = {
+    "[[" ~ section_name ~ "]]" ~
+    NEWLINE* ~
+    (comment | key_value | NEWLINE)*
+}
 
 key_value = {
-    key ~ "=" ~ value ~
-    NEWLINE?
+    key ~ WHITESPACE? ~ "=" ~ WHITESPACE? ~ (quoted_value | value)? ~ NEWLINE?
 }
+section_name = { (ASCII_ALPHANUMERIC | "_" | "-" | ".")+ }
+key = { (ASCII_ALPHANUMERIC | "_" | "-")+ }
+value = { (ASCII_ALPHANUMERIC | PUNCTUATION | " ")+ }
+quoted_value = { "\"" ~ (!"\"" ~ (ASCII_ALPHANUMERIC | PUNCTUATION | " "))* ~ "\"" }
 
-key = { (!(NEWLINE | "=") ~ ANY)+ }
-value = { (!NEWLINE ~ ANY)+ }
-
-NEWLINE = { "\n" }
+comment = { ("#" | ";") ~ (!NEWLINE ~ (ASCII_ALPHANUMERIC | PUNCTUATION | " "))* ~ NEWLINE? }
 ```
 
-### Let's break down the grammar rule by rule:
+Here's the breakdown of your updated grammar:
+
+### My Grammar rule by rule:
 
 - **Overall Structure**
-The `.ini` file is represented as an `ini_file`, which can contain multiple `section` blocks.
+  The root rule for parsing an INI file is represented as `ini_file`. It allows for multiple sections, comments, and newlines, and must start and end with `SOI` (Start of Input) and `EOI` (End of Input).
   ```pest
-  ini_file = { SOI ~ (section)* ~ EOI }
+  ini_file = { SOI ~ (comment | section | NEWLINE)* ~ EOI }
   ```
-  - `SOI`: Start of input.
-  - `EOI`: End of input.
-  - The file can contain multiple sections.
+  - `SOI`: Start of Input.
+  - `EOI`: End of Input.
+  - The file can contain sections, comments, and newlines.
+
+- **Whitespace**
+  The `WHITESPACE` rule defines space or tab characters as optional spacing in key-value pairs.
+  ```pest
+  WHITESPACE = _{ " " | "\t" }
+  ```
+  - `WHITESPACE` can be either a space or a tab.
 
 - **Section**
-Each section is defined as follows:
+  A section is defined by a name enclosed in square brackets `[]`, with an optional newline and a combination of comments, key-value pairs, or nested sections.
   ```pest
   section = {
-      "[" ~ section_name ~ "]" ~ NEWLINE ~ key_value*
+      "[" ~ section_name ~ "]" ~ NEWLINE* ~ (comment | key_value | nested_section | NEWLINE)*
   }
   ```
-  - `section_name`: Defines the name of the section (e.g., `Database`).
-  - `key_value`: One or more key-value pairs within the section.
+  - `section_name`: The name of the section.
+  - The section can contain comments, key-value pairs, or nested sections.
+  - The section can be followed by newlines.
 
-- **Section Name**
-The name of the section is represented by any characters except `]`.
+- **Nested Section**
+  A nested section is a section enclosed in double square brackets `[[]]`, with similar content as regular sections, including key-value pairs and comments.
   ```pest
-  section_name = { (!"]" ~ ANY)+ }
+  nested_section = {
+      "[[" ~ section_name ~ "]]" ~ NEWLINE* ~ (comment | key_value | NEWLINE)*
+  }
   ```
+  - This allows for nested sections within a section.
 
 - **Key-Value Pair**
-A key-value pair is defined as a `key` followed by an `=` sign and then the `value`.
+  A key-value pair is composed of a key followed by an optional space around the `=` sign, followed by an optional quoted or unquoted value. The key-value pair ends with an optional newline.
   ```pest
-  key_value = { key ~ "=" ~ value ~ NEWLINE }
+  key_value = {
+      key ~ WHITESPACE? ~ "=" ~ WHITESPACE? ~ (quoted_value | value)? ~ NEWLINE?
+  }
+  ```
+  - `key`: The key in the key-value pair.
+  - `quoted_value | value`: The value of the key, either quoted or unquoted.
+  - Newline is optional after the key-value pair.
+
+- **Section Name**
+  A section name is a sequence of one or more alphanumeric characters, underscores, hyphens, or dots.
+  ```pest
+  section_name = { (ASCII_ALPHANUMERIC | "_" | "-" | ".")+ }
   ```
 
 - **Key**
-The key is any sequence of characters that does not contain `=`.
+  The key consists of one or more alphanumeric characters, underscores, or hyphens, excluding the equal sign `=`.
   ```pest
-  key = { (!"=" ~ ANY)+ }
+  key = { (ASCII_ALPHANUMERIC | "_" | "-")+ }
   ```
 
-- **Value**  
-The value can be any sequence of characters that does not contain a newline.
+- **Value**
+  A simple value consists of ASCII printable characters (except control characters, backslashes, and newlines), including punctuation and spaces.
   ```pest
-  value = { (!NEWLINE ~ ANY)+ }
+  value = { (ASCII_ALPHANUMERIC | PUNCTUATION | " ")+ }
+  ```
+
+- **Quoted Value**
+  A quoted value is enclosed in double quotes and may contain spaces, punctuation, and other special characters, except the quote itself.
+  ```pest
+  quoted_value = { "\"" ~ (!"\"" ~ (ASCII_ALPHANUMERIC | PUNCTUATION | " "))* ~ "\"" }
+  ```
+
+- **Comment**
+  A comment starts with `#` or `;` and continues until the end of the line, optionally followed by a newline.
+  ```pest
+  comment = { ("#" | ";") ~ (!NEWLINE ~ (ASCII_ALPHANUMERIC | PUNCTUATION | " "))* ~ NEWLINE? }
   ```
 
 - **Newline**
-Newlines are used to separate lines in the file.
+  The `NEWLINE` rule matches a newline character `\n`.
   ```pest
-  NEWLINE = _{ "\n" }
+  NEWLINE = { "\n" }
   ```
 
 ### Parsing Outcome and Usage
@@ -125,11 +190,20 @@ fn main() {
 
     let ini_file = parse(&input).expect("Failed to parse INI file");
 
-    for section in &ini_file.sections {
-        println!("[{}]", section.name);
+    for (section_name, section) in ini_file.sections {
+        println!("[{}]", section_name);
         for (key, value) in &section.key_values {
             println!("{} = {}", key, value);
         }
+
+        for (nested_name, nested_section) in &section.nested_sections {
+            println!("[[{}]]", nested_name);
+            for (key, value) in &nested_section.key_values {
+                println!("{} = {}", key, value);
+            }
+        }
+
+        println!();
     }
 }
 ```

@@ -1,41 +1,44 @@
 /// The root rule for parsing an entire INI file. An INI file consists of multiple sections,
-/// each containing key-value pairs.
-/// The sections are separated by optional newlines for flexibility in formatting.
-ini_file = { SOI ~ (section ~ NEWLINE*)* ~ EOI }
+/// each containing key-value pairs or nested sections. The sections are separated by optional
+/// newlines and may include comments for readability.
+ini_file = { SOI ~ (comment | section | NEWLINE)* ~ EOI }
 
-/// Represents a section in the INI file. A section begins with a `[` followed by a section name,
-/// and ends with a `]`. Between the section header and the section's key-value pairs, there may
-/// be optional newlines. The section can contain multiple key-value pairs.
+/// Defines whitespace characters (space or tab) for optional spacing.
+WHITESPACE = _{ " " | "\t" }
+
+/// Defines a section in the INI file. A section starts with a name enclosed in square brackets.
 section = {
     "[" ~ section_name ~ "]" ~
     NEWLINE* ~
-    key_value* ~
-    NEWLINE*
+    (comment | key_value | nested_section | NEWLINE)*
 }
 
-/// The section name is the identifier for the section, enclosed by square brackets. It can be any
-/// sequence of characters except `]`, which marks the end of the section. The section name typically
-/// describes the content of the section, such as `[Database]` or `[Logging]`.
-section_name = { (!"]" ~ ANY)+ }
+/// Defines nested sections, which can contain their own key-value pairs.
+nested_section = {
+    "[[" ~ section_name ~ "]]" ~
+    NEWLINE* ~
+    (comment | key_value | NEWLINE)*
+}
 
-/// Represents a key-value pair within a section. Each key-value pair consists of a key, an equal sign
-/// (`=`), and a value, followed by an optional newline. Key-value pairs provide the actual data for each
-/// section in the INI file, such as `host=localhost` or `version=1.0`.
+/// Key-value pairs, with optional spaces around the `=` sign and optional quoted or multiline values.
 key_value = {
-    key ~ "=" ~ value ~
-    NEWLINE?
+    key ~ WHITESPACE? ~ "=" ~ WHITESPACE? ~ (quoted_value | value)? ~ NEWLINE?
 }
 
-/// The key in a key-value pair. It can consist of any sequence of characters, except for newlines or the 
-/// equal sign (`=`), which is used to separate the key and value. Keys are typically descriptive identifiers.
-key = { (!(NEWLINE | "=") ~ ANY)+ }
+/// A valid section name, consisting of alphanumeric characters, underscores, hyphens, and dots.
+section_name = { (ASCII_ALPHANUMERIC | "_" | "-" | ".")+ }
 
-/// The value in a key-value pair. It is a sequence of characters that may include spaces and any other
-/// characters except newlines. The value is the data associated with the key, such as the database host or
-/// application version.
-value = { (!NEWLINE ~ ANY)+ }
+/// A key in a key-value pair, consisting of alphanumeric characters, underscores, and hyphens.
+key = { (ASCII_ALPHANUMERIC | "_" | "-")+ }
 
-/// Defines the `NEWLINE` rule, which represents the newline character (`\n`). Newlines separate sections,
-/// key-value pairs, and may appear between any other elements for improved readability and flexibility in
-/// the INI file format.
+/// A simple value, consisting of ASCII printable characters except for control characters, backslashes, and newlines.
+value = { (ASCII_ALPHANUMERIC | PUNCTUATION | " ")+ }
+
+/// A quoted value, allowing spaces and special characters, enclosed in double quotes.
+quoted_value = { "\"" ~ (!"\"" ~ (ASCII_ALPHANUMERIC | PUNCTUATION | " "))* ~ "\"" }
+
+/// Represents a comment, starting with `#` or `;` and continuing until the end of the line.
+comment = { ("#" | ";") ~ (!NEWLINE ~ (ASCII_ALPHANUMERIC | PUNCTUATION | " "))* ~ NEWLINE? }
+
+/// Matches a newline character (`\n`).
 NEWLINE = { "\n" }
